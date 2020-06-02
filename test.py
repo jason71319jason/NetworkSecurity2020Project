@@ -45,7 +45,7 @@ if __name__ == "__main__":
 			elif fileCheck[len(fileCheck)-1] == "json":
 				#print(d+" : json")
 				if fileCheck[0] == "Wireshark":
-					inputFile = open(fullPath)
+					inputFile = open(fullPath, encoding="latin-1")
 					jsonData = json.load(inputFile)
 					for elem in jsonData:
 						source = elem["_source"]
