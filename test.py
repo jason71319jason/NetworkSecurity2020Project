@@ -20,13 +20,15 @@ class Log:
     def load(self, path): None
 
 class LogXml(Log):
-    def __init__(self, name):
+    def __init__(self, name, path):
         super().__init__()
         self.type = "XML"
         self.name = name
+        self.path = path
+        self.load()
 
-    def load(self, path):
-        self.data = ET.ElementTree(file=path)
+    def load(self):
+        self.data = ET.ElementTree(file=self.path)
         self.root = self.data.getroot()
 
     def show(self, tag):
@@ -36,11 +38,15 @@ class LogXml(Log):
             print("{} {}: {}".format(self.name, tag, res.text))
 
 class LogJson(Log):
-    def __init__(self):
+    def __init__(self, name, path):
         super().__init__()
+        self.type = "Json"
+        self.name = name
+        self.path = path
+        self.load()
 
-    def load(self, path):
-        self.data = json.load(open(path, encoding="latin-1"))
+    def load(self):
+        self.data = json.load(open(self.path, encoding="latin-1"))
 
     def show(self, tag):
         for elem in self.data:
@@ -49,52 +55,56 @@ class LogJson(Log):
             frame = layers["frame"]
             print("Wireshark frame.time: "+frame["frame.time"])
 
+class TestCase:
+    def __init__(self, name, path):
+        self.path = path
+        self.name = name
+        self.security_log = None
+        self.sysmon_log = None
+        self.wireshark_log = None
 
-def show_tag(tree, log_type, tag):
-    root = tree.getroot()
-    for elem in root:
-        xmlns = elem.tag.split("}")[0] + "}"
-    for res in root.iter(xmlns+tag):
-        print("{} {}: {}".format(log_type, tag, res.text))
+    def load_xml(self, file_name):
+        if file_name == "Security.xml":
+            log = LogXml("Security", join(self.path, file_name))
+            self.security_log = log
 
-def show_frame(js):
-    for elem in js:
-        source = elem["_source"]
-        layers = source["layers"]
-        frame = layers["frame"]
-        print("Wireshark frame.time: "+frame["frame.time"])
+        elif file_name == "Sysmon.xml":
+            log = LogXml("Sysmon", join(self.path, file_name))
+            self.sysmon_log = log
+        else:
+            print("Unknown xml file name...")
 
-def load_xml(log, path):
-    if log == "Security.xml":
-        res = LogXml("Security")
-        res.load(path)
-        res.show("EventID")
-    elif log == "Sysmon.xml":
-        res = LogXml("Sysmon")
-        res.load(path)
-        res.show("EventID")
-    else:
-        print("Unknown xml file name...")
+    def load_json(self, file_name):
+        if file_name == "Wireshark.json":
+            log = LogJson("Wireshark", join(self.path, file_name))
+            self.wireshark_log = log
+        else:
+            print("Unknown json file name...")
 
-def load_json(log, path):
-    if log == "Wireshark.json":
-        show_frame(json.load(open(path, encoding="latin-1")))
-    else:
-        print("Unknown json file name...")
 
-def file_check(log, path):
-    if log.endswith("xml"):
-        load_xml(log, path)
-    elif log.endswith("json"):
-        load_json(log, path)
-    else:
-        print("Only for xml or json...")
+class DataLoader:
 
-def load_data(path):
-    for num, file_name in enumerate(listdir(path)):
-        print("testcase {}: {}".format(num+1, file_name))
-        for log in listdir(join(path, file_name)):
-            file_check(log, join(path, file_name, log))
+    def __init__(self, path):
+        self.path = path
+        self.testcases = []
+
+    def check_ext(self, file_name):
+        if file_name.endswith("xml"):
+            self.testcases[-1].load_xml(file_name)
+        elif file_name.endswith("json"):
+            self.testcases[-1].load_json(file_name)
+        else:
+            print("Only for xml or json...")
+
+    def load_testcase_directory(self):
+        for num, testcase_dir in enumerate(listdir(self.path)):
+            self.load_testcase(testcase_dir)
+
+    def load_testcase(self, testcase_dir):
+        testcase = TestCase(testcase_dir, join(self.path, testcase_dir))
+        self.testcases.append(testcase)
+        for file_name in listdir(join(self.path, testcase_dir)):
+            self.check_ext(file_name)
 
 if __name__ == "__main__":
 
@@ -102,6 +112,15 @@ if __name__ == "__main__":
     parser.add_argument("file_path", help="root path of data")
     args = parser.parse_args()
 
-    load_data(args.file_path)
+    #load_data(args.file_path)
+    dataLoader = DataLoader(args.file_path)
+    dataLoader.load_testcase_directory()
+    for num, testcase in enumerate(dataLoader.testcases):
+        print("testcase {}: {}".format(num+1, testcase.name))
+        testcase.wireshark_log.show("frame.time")
+        testcase.sysmon_log.show("EventID")
+        testcase.security_log.show("EventID")
+
+
 
 
