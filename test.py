@@ -2,6 +2,7 @@ from argparse import ArgumentParser
 from os import listdir
 from os.path import isfile, isdir, join
 import json
+import pprint
 
 try:
     import xml.etree.cElementTree as ET
@@ -17,12 +18,13 @@ class Log:
     def __str__(self):
         return "Name: %s, Type: %s" % (self.name, self.type)
 
-    def load(self, path): None
+    def load(self): None
+    def show(self, tag): None
 
 class LogXml(Log):
     def __init__(self, name, path):
         super().__init__()
-        self.type = "XML"
+        self.type = "xml"
         self.name = name
         self.path = path
         self.load()
@@ -37,10 +39,38 @@ class LogXml(Log):
         for res in self.root.iter(xmlns+tag):
             print("{} {}: {}".format(self.name, tag, res.text))
 
+    def show_tree(self):
+        print("{}.{} Tree Structure".format(self.name, self.type))
+
+        def elem_str(elem, depth):
+            res = []
+            indent = depth * "\t"
+            tag = elem.tag.split("}")[1]
+
+            if elem.text is None:
+                res.append("{}<{}>".format(indent, tag))
+            else:
+                res.append("{}<{}> {}".format(indent, tag, elem.text))
+            res.append("{}</{}>".format(indent, tag))
+
+            return res
+
+        def dfs(node, depth):
+            for elem in node:
+                print(elem_str(elem, depth)[0])
+                dfs(elem, depth+1)
+                print(elem_str(elem, depth)[1])
+
+
+        first_event = self.root.find("./{http://schemas.microsoft.com/win/2004/08/events/event}Event")
+        print(elem_str(first_event, 0)[0])
+        dfs(first_event, 1)
+        print(elem_str(first_event, 0)[1])
+
 class LogJson(Log):
     def __init__(self, name, path):
         super().__init__()
-        self.type = "Json"
+        self.type = "json"
         self.name = name
         self.path = path
         self.load()
@@ -54,6 +84,12 @@ class LogJson(Log):
             layers = source["layers"]
             frame = layers["frame"]
             print("Wireshark frame.time: "+frame["frame.time"])
+
+    def show_tree(self):
+        print("{}.{} Tree Structure".format(self.name, self.type))
+        pprint.pprint(self.data[0])
+
+
 
 class TestCase:
     def __init__(self, name, path):
@@ -106,20 +142,39 @@ class DataLoader:
         for file_name in listdir(join(self.path, testcase_dir)):
             self.check_ext(file_name)
 
+class Statistics:
+    def __init__(self): None
+
+class WiresharkStatistics(Statistics):
+    def __init__(self):
+        print("Not Yet")
+
+class SecurityStatistics(Statistics):
+    def __init__(self):
+        print("Not Yet")
+
+class SysmonStatistics(Statistics):
+    def __init__(self):
+        print("Not Yet")
+
 if __name__ == "__main__":
 
     parser = ArgumentParser()
     parser.add_argument("file_path", help="root path of data")
     args = parser.parse_args()
 
-    #load_data(args.file_path)
     dataLoader = DataLoader(args.file_path)
     dataLoader.load_testcase_directory()
     for num, testcase in enumerate(dataLoader.testcases):
         print("testcase {}: {}".format(num+1, testcase.name))
-        testcase.wireshark_log.show("frame.time")
-        testcase.sysmon_log.show("EventID")
-        testcase.security_log.show("EventID")
+        #testcase.wireshark_log.show("frame.time")
+        #testcase.sysmon_log.show("EventID")
+        #testcase.security_log.show("EventID")
+        testcase.wireshark_log.show_tree()
+        testcase.security_log.show_tree()
+        testcase.sysmon_log.show_tree()
+
+        break # print 1st testcase
 
 
 
