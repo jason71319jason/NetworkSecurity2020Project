@@ -2,7 +2,10 @@ from argparse import ArgumentParser
 from os import listdir
 from os.path import isfile, isdir, join
 import json
+import gc
 import pprint
+import multiprocessing as mp
+import threading as td
 
 try:
     import xml.etree.cElementTree as ET
@@ -27,11 +30,9 @@ class LogXml(Log):
         self.type = "xml"
         self.name = name
         self.path = path
-        self.load()
 
     def load(self):
-        self.data = ET.ElementTree(file=self.path)
-        self.root = self.data.getroot()
+        self.root = ET.ElementTree(file=self.path).getroot()
 
     def show(self, tag):
         for elem in self.root:
@@ -73,7 +74,6 @@ class LogJson(Log):
         self.type = "json"
         self.name = name
         self.path = path
-        self.load()
 
     def load(self):
         self.data = json.load(open(self.path, encoding="latin-1"))
@@ -88,8 +88,6 @@ class LogJson(Log):
     def show_tree(self):
         print("{}.{} Tree Structure".format(self.name, self.type))
         pprint.pprint(self.data[0])
-
-
 
 class TestCase:
     def __init__(self, name, path):
@@ -122,25 +120,44 @@ class DataLoader:
 
     def __init__(self, path):
         self.path = path
-        self.testcases = []
 
-    def check_ext(self, file_name):
+    def check_ext(self, file_name, testcase):
         if file_name.endswith("xml"):
-            self.testcases[-1].load_xml(file_name)
+            testcase.load_xml(file_name)
         elif file_name.endswith("json"):
-            self.testcases[-1].load_json(file_name)
+            testcase.load_json(file_name)
         else:
             print("Only for xml or json...")
 
     def load_testcase_directory(self):
-        for num, testcase_dir in enumerate(listdir(self.path)):
+        print("deprecated")
+        '''
+        for testcase_dir in listdir(self.path):
             self.load_testcase(testcase_dir)
+        '''
 
     def load_testcase(self, testcase_dir):
         testcase = TestCase(testcase_dir, join(self.path, testcase_dir))
-        self.testcases.append(testcase)
+
         for file_name in listdir(join(self.path, testcase_dir)):
-            self.check_ext(file_name)
+            self.check_ext(file_name, testcase)
+
+        # mulit-process
+        p1 = mp.Process(target=testcase.wireshark_log.load(), args=())
+        p1.start()
+        p2 = mp.Process(target=testcase.security_log.load(), args=())
+        p2.start()
+        p3 = mp.Process(target=testcase.sysmon_log.load(), args=())
+        p3.start()
+        p1.join()
+        p2.join()
+        p3.join()
+
+        return testcase
+
+    def __iter__(self):
+        for testcase in listdir(self.path):
+            yield self.load_testcase(testcase)
 
 class Statistics:
     def __init__(self): None
@@ -164,18 +181,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     dataLoader = DataLoader(args.file_path)
-    dataLoader.load_testcase_directory()
-    for num, testcase in enumerate(dataLoader.testcases):
+
+    for num, testcase in enumerate(dataLoader):
         print("testcase {}: {}".format(num+1, testcase.name))
-        #testcase.wireshark_log.show("frame.time")
-        #testcase.sysmon_log.show("EventID")
-        #testcase.security_log.show("EventID")
-        testcase.wireshark_log.show_tree()
-        testcase.security_log.show_tree()
-        testcase.sysmon_log.show_tree()
-
-        break # print 1st testcase
-
-
-
+        testcase.wireshark_log.show("frame.time")
+        testcase.sysmon_log.show("EventID")
+        testcase.security_log.show("EventID")
 
