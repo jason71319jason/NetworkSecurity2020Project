@@ -1,11 +1,11 @@
 from argparse import ArgumentParser
 from os import listdir
 from os.path import isfile, isdir, join
+import pickle
 import json
 import gc
 import pprint
 import multiprocessing as mp
-import threading as td
 
 try:
     import xml.etree.cElementTree as ET
@@ -89,6 +89,18 @@ class LogJson(Log):
         print("{}.{} Tree Structure".format(self.name, self.type))
         pprint.pprint(self.data[0])
 
+    def split_k_set(self, split_k_set=10):
+        val_size = int(len(self.data)/10)
+        upbound = len(self.data)
+        start_idx = 0
+        end_idx = val_size
+        for i in range(split_k_set):
+            train_set = self.data[:start_idx] + self.data[end_idx:]
+            validation_set = self.data[start_idx:end_idx]
+            start_idx += val_size
+            end_idx = min(end_idx + val_size, upbound)
+            yield (train_set, validation_set)
+
 class TestCase:
     def __init__(self, name, path):
         self.path = path
@@ -142,6 +154,7 @@ class DataLoader:
         for file_name in listdir(join(self.path, testcase_dir)):
             self.check_ext(file_name, testcase)
 
+        '''
         # mulit-process
         p1 = mp.Process(target=testcase.wireshark_log.load(), args=())
         p1.start()
@@ -152,6 +165,7 @@ class DataLoader:
         p1.join()
         p2.join()
         p3.join()
+        '''
 
         return testcase
 
@@ -163,8 +177,75 @@ class Statistics:
     def __init__(self): None
 
 class WiresharkStatistics(Statistics):
-    def __init__(self):
-        print("Not Yet")
+    def __init__(self, data):
+        self.data = data
+        self.instance_count = len(data)
+        self.field_count = {}
+        self.layer_count = {}
+
+        self.protocols = [
+                "ntp",
+                "dhcp",
+                "dhcpv6",
+                "ipv6",
+                "http",
+                "arp",
+                "nbns",
+                "dns",
+                "data",
+                "udp",
+                "tcp.segments",
+                "tls",
+                "tcp",
+                "ip",
+                "frame",
+                "eth"]
+
+    def show_range(self, up_bound, low_bound):
+        over_k = int(low_bound * self.instance_count)
+        under_k = int(up_bound * self.instance_count)
+        for field in self.sorted_field:
+            if self.field_count[field] >= over_k and self.field_count[field] < under_k:
+                print("{}: {:.2%}".format(field, self.field_count[field]/self.instance_count))
+
+    def calculate(self):
+        for d in self.data:
+            self.add_instance(d)
+
+    def add_instance(self, new_data):
+
+        field_in_packet = []
+
+        def dfs(parent, node):
+
+            if type(node) is not dict:
+                field = node + "@" + parent
+                if field not in field_in_packet:
+                    if field not in self.field_count:
+                        self.field_count[field] = 1
+                    else:
+                        self.field_count[field] += 1
+                    field_in_packet.append(field)
+                return None
+
+            for n in node:
+                if node[n] is not None:
+                    dfs(n, node[n])
+
+        for layer in new_data['_source']['layers']:
+            if layer in self.protocols:
+                dfs("layers", new_data['_source']['layers'][layer])
+
+    def countLayers(self):
+        for d in self.data:
+            self.addLayer(d)
+
+    def addLayer(self, data):
+        for layer in data['_source']['layers']:
+            if layer in self.layer_count:
+                self.layer_count[layer] += 1
+            else:
+                self.layer_count[layer] = 1
 
 class SecurityStatistics(Statistics):
     def __init__(self):
@@ -177,14 +258,84 @@ class SysmonStatistics(Statistics):
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument("file_path", help="root path of data")
+    parser.add_argument("-f","--file_path", help="root path of data")
     args = parser.parse_args()
 
     dataLoader = DataLoader(args.file_path)
 
-    for num, testcase in enumerate(dataLoader):
-        print("testcase {}: {}".format(num+1, testcase.name))
-        testcase.wireshark_log.show("frame.time")
-        testcase.sysmon_log.show("EventID")
-        testcase.security_log.show("EventID")
+    '''
+    # Show fields
+    total_field_count = {}
+    total_packet = 0
 
+    for num, testcase in enumerate(dataLoader):
+        testcase.wireshark_log.load()
+        ws = WiresharkStatistics(testcase.wireshark_log.data)
+        ws.calculate()
+        with open('wireshark_log/' + testcase.name + '.fields', 'w') as f:
+            for field in sorted(ws.field_count.items(), key=lambda v:v[1]):
+                f.write("{:>15}:{:>10}:{:>10.2%}\n".format(
+                    field[0], field[1],
+                    field[1]/len(ws.data)))
+
+                if field[0] in total_field_count:
+                    total_field_count[field[0]] += field[1]
+                else:
+                    total_field_count[field[0]] = field[1]
+
+            total_packet += len(ws.data)
+
+    with open('wireshark_log/total.fields', 'w') as f:
+        for field in sorted(total_field_count.items(), key=lambda v:v[1]):
+                f.write("{:>15}:{:>10}:{:>10.2%}\n".format(
+                    field[0], field[1],
+                    field[1]/len(ws.data)))
+
+    '''
+    '''
+    # Show layers
+    total_layer_count = {}
+    total_packet = 0
+    for num, testcase in enumerate(dataLoader):
+        testcase.wireshark_log.load()
+        ws = WiresharkStatistics(testcase.wireshark_log.data)
+        ws.countLayers()
+        with open('wireshark_log/' + testcase.name + '.layers', 'w') as f:
+            for layer in ws.layer_count:
+                f.write("{:>15}:{:>10}:{:>10.2%}\n".format(
+                    layer, ws.layer_count[layer],
+                    ws.layer_count[layer]/len(ws.data)))
+
+                if layer in total_layer_count:
+                    total_layer_count[layer] += ws.layer_count[layer]
+                else:
+                    total_layer_count[layer] = ws.layer_count[layer]
+
+            total_packet += len(ws.data)
+
+    with open('wireshark_log/total.layers', 'w') as f:
+        for layer in sorted(total_layer_count.items(), key=lambda v:v[1]):
+            f.write("{:>15}:{:>10}:{:>10.2%}\n".format(
+                layer[0], layer[1],
+                layer[1]/total_packet))
+
+    '''
+
+    '''
+    # Split data
+    fields = []
+    for num, testcase in enumerate(dataLoader):
+        testcase.wireshark_log.load()
+        k = 0
+        for train, val in testcase.wireshark_log.split_k_set():
+            with open('set/' + str(num) + '/wireshark_' + str(k) + '.train', 'wb') as t:
+                pickle.dump(train, t)
+            with open('set/' + str(num) + '/wireshark_' + str(k) + '.val', 'wb') as v:
+                pickle.dump(val, v)
+            k += 1
+        #print("testcase {}: {}".format(num+1, testcase.name))
+        #ws = WiresharkStatistics(testcase.wireshark_log.data)
+        #ws.calculate()
+        #ws.show_range(1.25, -1)
+        gc.collect()
+    '''
