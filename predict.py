@@ -222,15 +222,14 @@ class WiresharkPredictor(Predictor):
 if __name__ == "__main__":
 
     parser = ArgumentParser()
-    parser.add_argument("-f","--file_path", help="root path of data")
+    parser.add_argument("file_path", help="root path of data")
     args = parser.parse_args()
 
     dataLoader = DataLoader(args.file_path)
 
     for num, testcase in enumerate(dataLoader):
-        print("testcase {}: {}".format(num+1, testcase.name))
         testcase.wireshark_log.load()
         wireshark_predictor = WiresharkPredictor()
         wireshark_predictor.load('field_value_dict')
         res = wireshark_predictor.predicate(testcase.wireshark_log.data)
-        print(res)
+        print("testcase {}: person {}".format(num+1, res))
