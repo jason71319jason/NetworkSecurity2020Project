@@ -226,8 +226,7 @@ class SecurityPredictor(Predictor):
 	def __init__(self):
 		self.sheet = None
 
-	def load(self, directory):
-		workbook = xw.Book(directory)
+	def load(self, workbook):
 		sheet = workbook.sheets["Security"]
 		self.sheet = sheet
 		
@@ -295,8 +294,7 @@ class SysmonPredictor(Predictor):
 	def __init__(self):
 		self.sheet = None
 
-	def load(self, directory):
-		workbook = xw.Book(directory)
+	def load(self, workbook):
 		sheet = workbook.sheets["Sysmon"]
 		self.sheet = sheet
 		
@@ -367,17 +365,18 @@ if __name__ == "__main__":
 	args = parser.parse_args()
 
 	dataLoader = DataLoader(args.file_path)
-
+	workbook = xw.Book('statistics.xlsx')
+	
 	for num, testcase in enumerate(dataLoader):
 		testcase.wireshark_log.load()
 		wireshark_predictor = WiresharkPredictor()
 		wireshark_predictor.load('field_value_dict')
 		testcase.security_log.load()
 		security_predictor = SecurityPredictor()
-		security_predictor.load('statistics.xlsx')
+		security_predictor.load(workbook)
 		testcase.sysmon_log.load()
 		sysmon_predictor = SysmonPredictor()
-		sysmon_predictor.load('statistics.xlsx')
+		sysmon_predictor.load(workbook)
 		res1 = wireshark_predictor.predict(testcase.wireshark_log.data)
 		res2 = security_predictor.predict(testcase.security_log.root)
 		res3 = sysmon_predictor.predict(testcase.sysmon_log.root)
@@ -390,3 +389,4 @@ if __name__ == "__main__":
 		res = [i+1 for i,x in enumerate(poll) if x==maxNum]
 		#print(random.choice(res))
 		print("testcase {}: person {}".format(num+1, random.choice(res)))
+	workbook.app.kill()
